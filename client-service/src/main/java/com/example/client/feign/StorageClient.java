@@ -1,5 +1,6 @@
 package com.example.client.feign;
 
+import com.example.client.config.FeignConfig;
 import com.example.client.dto.ProcessedMessage;
 import com.example.client.dto.StoredMessage;
 import org.springframework.cloud.openfeign.FeignClient;
@@ -11,7 +12,11 @@ import org.springframework.web.bind.annotation.RequestBody;
 import java.util.List;
 import java.util.Map;
 
-@FeignClient(name = "storage-service", url = "${storage.service.url}")
+@FeignClient(
+        name = "storage-service",
+        url = "${storage.service.url}",
+        configuration = FeignConfig.class
+)
 public interface StorageClient {
 
     // ----- Part 1 -----

@@ -15,3 +15,7 @@ spring:
 storage:
   service:
     url: ${STORAGE_SERVICE_URL:http://localhost:8082}
+
+logging:
+  level:
+    com.example.client.feign.StorageClient: DEBUG

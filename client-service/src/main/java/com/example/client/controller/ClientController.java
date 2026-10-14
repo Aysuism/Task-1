@@ -1,6 +1,7 @@
 package com.example.client.controller;
 
 import com.example.client.feign.StorageClient;
+import com.example.client.service.StorageGuardService;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -13,18 +14,28 @@ import java.util.Map;
 public class ClientController {
 
     private final StorageClient storageClient;
+    private final StorageGuardService guardService;
 
-    public ClientController(StorageClient storageClient) {
+    public ClientController(StorageClient storageClient, StorageGuardService guardService) {
         this.storageClient = storageClient;
+        this.guardService = guardService;
     }
 
     @GetMapping("/ping-storage")
-    public Map pingStorage() {
-        Map storageAnswer = storageClient.ping();
+    public Map<String, Object> pingStorage() {
+        Map<String, Object> storageAnswer = storageClient.ping();
 
         return Map.of(
                 "service", "client-service",
                 "storageAnswer", storageAnswer
+        );
+    }
+
+    @GetMapping("/ping-storage-safe")
+    public Map<String, Object> pingStorageSafe() {
+        return Map.of(
+                "service", "client-service",
+                "storageAnswer", guardService.ping()
         );
     }
 

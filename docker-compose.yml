@@ -21,7 +21,9 @@ services:
     container_name: storage-service
     ports:
       - "8082:8082"
+      - "9090:9090"
     environment:
+      GRPC_SERVER_PORT: 9090
       DB_HOST: postgres
       DB_PORT: 5432
       DB_NAME: storagedb
@@ -38,6 +40,8 @@ services:
       - "8081:8081"
     environment:
       STORAGE_SERVICE_URL: http://storage-service:8082
+      STORAGE_GRPC_HOST: storage-service
+      STORAGE_GRPC_PORT: 9090
     depends_on:
       - storage-service
 

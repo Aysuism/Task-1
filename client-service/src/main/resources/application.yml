@@ -29,6 +29,10 @@ management:
 storage:
   service:
     url: ${STORAGE_SERVICE_URL:http://localhost:8082}
+  grpc:
+    host: ${STORAGE_GRPC_HOST:localhost}
+    port: ${STORAGE_GRPC_PORT:9090}
+    deadline-ms: ${STORAGE_GRPC_DEADLINE_MS:2000}
 
 logging:
   level:

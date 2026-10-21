@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+package greeter.v1;
+
+option java_multiple_files = true;
+option java_package = "com.example.storage.grpc";
+
+// Keep this contract identical to client-service/src/main/proto/greeter.proto
+// (only java_package differs, and it does not affect the wire format).
+// The two services share no code, so each one has its own copy.
+service Greeter {
+  rpc SayHello (HelloRequest) returns (HelloReply);
+}
+
+message HelloRequest { string name = 1; }
+message HelloReply { string message = 1; }

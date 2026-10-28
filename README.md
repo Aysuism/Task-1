@@ -1,10 +1,11 @@
-# Task-1: client-service + storage-service
+# Task-1: client-service + storage-service + email-service
 
-Two small Spring Boot microservices that talk to each other over HTTP (REST + Feign) and over gRPC.
+Three small Spring Boot microservices. client-service and storage-service talk to each other over HTTP (REST + Feign) and over gRPC. When storage-service saves a message it also publishes an event to RabbitMQ, and email-service consumes it and sends an email (see [Event-driven email notifications](#event-driven-email-notifications-rabbitmq)).
 
 - **client-service** (port `8081`) is the public entry point. It validates and processes incoming messages, then calls storage-service through a Feign client. It can also call storage-service over gRPC.
 - **storage-service** (port `8082`, gRPC port `9090`) saves and returns messages using PostgreSQL.
-- **PostgreSQL 16** runs in Docker (host port `5433`).
+- **email-service** (port `8083`) listens to a RabbitMQ queue and sends an email for each saved message.
+- **PostgreSQL 16**, **RabbitMQ** and **Mailpit** (a fake SMTP server with a web inbox) run in Docker.
 
 ```
  curl / browser
@@ -27,7 +28,9 @@ Two small Spring Boot microservices that talk to each other over HTTP (REST + Fe
 
 ```
 .
-├── docker-compose.yml          # postgres + storage-service + client-service
+├── docker-compose.yml          # postgres + rabbitmq + mailpit + storage-service + client-service + email-service
+├── screenshots/                # proof that the email flow works (see the last section)
+├── email-service/              # RabbitMQ consumer + email sender (see the last section)
 ├── client-service/
 │   ├── Dockerfile              # multi-stage build (Maven -> JRE 17)
 │   ├── pom.xml
@@ -92,14 +95,14 @@ The first build runs `protoc` through `protobuf-maven-plugin`, so it needs inter
 
 ### Configuration (environment variables)
 
-| Variable | Used by | Default |
-|---|---|---|
-| `DB_HOST`, `DB_PORT` | storage-service | `localhost`, `5433` |
-| `DB_NAME`, `DB_USER`, `DB_PASSWORD` | storage-service | `storagedb`, `storage_user`, `storage_pass` |
-| `GRPC_SERVER_PORT` | storage-service | `9090` |
-| `STORAGE_SERVICE_URL` | client-service | `http://localhost:8082` |
-| `STORAGE_GRPC_HOST`, `STORAGE_GRPC_PORT` | client-service | `localhost`, `9090` |
-| `STORAGE_GRPC_DEADLINE_MS` | client-service | `2000` |
+| Variable                                 | Used by         | Default                                     |
+|------------------------------------------|-----------------|---------------------------------------------|
+| `DB_HOST`, `DB_PORT`                     | storage-service | `localhost`, `5433`                         |
+| `DB_NAME`, `DB_USER`, `DB_PASSWORD`      | storage-service | `storagedb`, `storage_user`, `storage_pass` |
+| `GRPC_SERVER_PORT`                       | storage-service | `9090`                                      |
+| `STORAGE_SERVICE_URL`                    | client-service  | `http://localhost:8082`                     |
+| `STORAGE_GRPC_HOST`, `STORAGE_GRPC_PORT` | client-service  | `localhost`, `9090`                         |
+| `STORAGE_GRPC_DEADLINE_MS`               | client-service  | `2000`                                      |
 
 Inside Docker Compose, the database is reached at `postgres:5432`, storage-service over REST at `http://storage-service:8082` and over gRPC at `storage-service:9090`.
 
@@ -107,31 +110,31 @@ Inside Docker Compose, the database is reached at `postgres:5432`, storage-servi
 
 ### client-service (`:8081`)
 
-| Method | Path | Description |
-|---|---|---|
-| POST | `/api/messages` | Body `{"author": "...", "text": "..."}`. Validates, processes, stores. Returns `201` with the stored message. Returns `400` if `author` or `text` is missing or blank |
-| GET | `/api/messages` | List all stored messages |
-| GET | `/api/client/ping-storage` | Calls storage-service ping directly (fails if storage is down) |
-| GET | `/api/client/ping-storage-safe` | Same ping, wrapped in a circuit breaker with a fallback `DOWN` response |
-| GET | `/api/client/greet/{name}` | Returns the greeting from storage-service (REST + Feign) |
-| GET | `/api/client/greet-grpc/{name}` | Returns the same greeting from storage-service over gRPC. Blank name gives `400`, storage down gives `503`, deadline exceeded gives `504` |
-| GET | `/actuator/health`, `/actuator/circuitbreakers` | Health and circuit breaker state |
+| Method | Path                                            | Description                                                                                                                                                           |
+|--------|-------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| POST   | `/api/messages`                                 | Body `{"author": "...", "text": "..."}`. Validates, processes, stores. Returns `201` with the stored message. Returns `400` if `author` or `text` is missing or blank |
+| GET    | `/api/messages`                                 | List all stored messages                                                                                                                                              |
+| GET    | `/api/client/ping-storage`                      | Calls storage-service ping directly (fails if storage is down)                                                                                                        |
+| GET    | `/api/client/ping-storage-safe`                 | Same ping, wrapped in a circuit breaker with a fallback `DOWN` response                                                                                               |
+| GET    | `/api/client/greet/{name}`                      | Returns the greeting from storage-service (REST + Feign)                                                                                                              |
+| GET    | `/api/client/greet-grpc/{name}`                 | Returns the same greeting from storage-service over gRPC. Blank name gives `400`, storage down gives `503`, deadline exceeded gives `504`                             |
+| GET    | `/actuator/health`, `/actuator/circuitbreakers` | Health and circuit breaker state                                                                                                                                      |
 
 **Message processing** (`MessageProcessingService`): the author is trimmed and capitalized (`aDA` becomes `Ada`), the text is trimmed and repeated whitespace is collapsed to one space, `wordCount` is calculated, and `processedAt` is set to the current time.
 
 ### storage-service (`:8082`)
 
-| Method | Path | Description |
-|---|---|---|
-| POST | `/api/storage/messages` | Save a processed message (`author`, `text`, `wordCount`, `processedAt`). Returns `201` |
-| GET | `/api/storage/messages` | List all messages |
-| GET | `/api/storage/ping` | Returns service name, status and time |
-| GET | `/api/storage/greet/{name}` | Returns a greeting string |
+| Method | Path                        | Description                                                                                                                                     |
+|--------|-----------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------|
+| POST   | `/api/storage/messages`     | Save a processed message (`author`, `email`, `text`, `wordCount`, `processedAt`). Returns `201` and publishes a `MessageSavedEvent` to RabbitMQ |
+| GET    | `/api/storage/messages`     | List all messages                                                                                                                               |
+| GET    | `/api/storage/ping`         | Returns service name, status and time                                                                                                           |
+| GET    | `/api/storage/greet/{name}` | Returns a greeting string                                                                                                                       |
 
 ### storage-service gRPC (`:9090`)
 
-| Service | Method | Description |
-|---|---|---|
+| Service              | Method                                                       | Description                                                                                      |
+|----------------------|--------------------------------------------------------------|--------------------------------------------------------------------------------------------------|
 | `greeter.v1.Greeter` | `SayHello(HelloRequest{name}) returns (HelloReply{message})` | Same greeting as `GET /api/storage/greet/{name}`. Blank `name` returns status `INVALID_ARGUMENT` |
 
 ### Quick test
@@ -161,14 +164,14 @@ grpcurl -plaintext -import-path storage-service/src/main/proto -proto greeter.pr
 
 Table `messages` (created automatically by Hibernate, `ddl-auto: update`):
 
-| Column | Type | Notes |
-|---|---|---|
-| `id` | bigint | generated identity |
-| `author` | varchar(100) | not null |
-| `text` | varchar(1000) | not null |
-| `word_count` | int | not null |
-| `processed_at` | timestamp | set by client-service |
-| `saved_at` | timestamp | set by storage-service when saving |
+| Column         | Type          | Notes                              |
+|----------------|---------------|------------------------------------|
+| `id`           | bigint        | generated identity                 |
+| `author`       | varchar(100)  | not null                           |
+| `text`         | varchar(1000) | not null                           |
+| `word_count`   | int           | not null                           |
+| `processed_at` | timestamp     | set by client-service              |
+| `saved_at`     | timestamp     | set by storage-service when saving |
 
 ## Resilience settings (client-service)
 
@@ -183,14 +186,15 @@ Table `messages` (created automatically by Hibernate, `ddl-auto: update`):
 ./mvnw test        # run inside each service folder
 ```
 
-- Each service has a `contextLoads` test. The storage-service one needs the Postgres container running. It starts the gRPC server on a free port (`grpc.server.port=0`), so it does not clash with a running service on 9090.
+- email-service: `MessageEventListenerTest` (sends an email for a valid event, rejects an invalid address). storage-service: `MessageEventPublisherTest` (publishes the right data, does not throw when RabbitMQ is down).
+- Each of client-service and storage-service has a `contextLoads` test. The storage-service one needs the Postgres container running. It starts the gRPC server on a free port (`grpc.server.port=0`), so it does not clash with a running service on 9090.
 - storage-service: `GreeterGrpcServiceTest` (success and empty name) uses the in-process gRPC transport. No Postgres and no ports needed.
 - client-service: `GreetGrpcServiceTest` (success, blank name gives 400, unreachable server gives 503) runs the real stub against a fake in-process server.
 
 ## Conventions (for humans and AI assistants)
 
 - Java 17, Spring Boot 3.3.5. Keep Spring and Spring Cloud versions as they are in the `pom.xml` files. Keep the gRPC and protobuf versions as a matching pair.
-- Layered structure: controller -> service -> repository / Feign client / gRPC stub. Controllers stay thin.
+- Layered structure: controller → service → repository / Feign client / gRPC stub. Controllers stay thin.
 - DTOs are Java `record`s. Entities are not exposed directly (storage-service maps `Message` to `MessageResponse`).
 - Constructor injection, no field `@Autowired`.
 - client-service never touches the database. All persistence goes through storage-service.
@@ -207,3 +211,64 @@ Practice task from `rpc_grpc_explained.pdf` (section 12), adapted to this repo: 
 - Empty name: gRPC `INVALID_ARGUMENT` on the service side, HTTP `400` at client-service.
 - Tests: one success and one empty-name test on the storage side, plus success, blank name and unreachable-server tests on the client side.
 - Done when: `/api/client/greet/Ada` and `/api/client/greet-grpc/Ada` both return a greeting, a blank name gives a clear error, no call can hang, and `./mvnw test` passes in both services.
+
+
+## Event-driven email notifications (RabbitMQ)
+
+When storage-service saves a message (`POST /api/storage/messages`), it also publishes a `MessageSavedEvent` to RabbitMQ. **email-service** consumes the event and sends an email to the message's `email` address. client-service never talks to email-service.
+
+```
+client-service --(Feign)--> storage-service --(AMQP)--> RabbitMQ --(AMQP)--> email-service --(SMTP)--> mailbox
+                                  |                    exchange message.events                         (Mailpit locally)
+                                  v                    queue    email.notifications
+                              PostgreSQL               DLQ      email.notifications.dlq
+```
+
+- **Publisher** (`storage-service/.../messaging`): `MessageController` calls `MessageEventPublisher` after `MessageService.save` has committed. `MessageService` is unchanged. If RabbitMQ is down, the error is logged and the save still succeeds (`201`).
+- **Message** (JSON): `eventId`, `messageId`, `author`, `recipientEmail`, `text`, `wordCount`, `savedAt`. Each service has its own copy of the record; only the field names are shared.
+- **Queue**: durable exchange `message.events`, routing key `message.saved`, durable queue `email.notifications`, persistent messages. Both services declare the same topology (identical queue arguments), so start order does not matter.
+- **Errors and retries** (email-service): acknowledge mode `auto` (ack when the listener returns). If sending fails, the listener retries 3 times (2 s, then 4 s). After that the message is rejected without requeue and RabbitMQ moves it to the dead-letter queue `email.notifications.dlq`. Look at it in the management UI.
+- **email-service** (port `8083`) has no dependency on the other two services' code or HTTP APIs.
+
+### Try it
+
+```bash
+docker compose up --build
+curl -X POST http://localhost:8081/api/messages \
+  -H "Content-Type: application/json" \
+  -d '{"author":"ada","email":"ada@example.com","text":"hello from the client"}'
+```
+
+- Mailpit (fake inbox with the email): http://localhost:8025
+- RabbitMQ management UI: http://localhost:15672 (guest / guest)
+- To test the failure path: `docker compose stop mailpit`, send a message, and watch the message land in `email.notifications.dlq` after the retries.
+
+| Variable                                         | Used by                        | Default                       |
+|--------------------------------------------------|--------------------------------|-------------------------------|
+| `RABBITMQ_HOST`, `RABBITMQ_PORT`                 | storage-service, email-service | `localhost`, `5672`           |
+| `RABBITMQ_USER`, `RABBITMQ_PASSWORD`             | storage-service, email-service | `guest`, `guest`              |
+| `MAIL_HOST`, `MAIL_PORT`                         | email-service                  | `localhost`, `1025`           |
+| `MAIL_USER`, `MAIL_PASSWORD`                     | email-service                  | empty (no auth)               |
+| `MAIL_SMTP_AUTH`, `MAIL_STARTTLS`                | email-service                  | `false`, `false`              |
+| `EMAIL_FROM`                                     | email-service                  | `noreply@example.com`         |
+
+For a real SMTP server (for example Gmail with an app password) set `MAIL_HOST=smtp.gmail.com`, `MAIL_PORT=587`, `MAIL_USER`, `MAIL_PASSWORD`, `MAIL_SMTP_AUTH=true`, `MAIL_STARTTLS=true`.
+
+### Notes
+
+- Emails go to **Mailpit**, a local test SMTP server, so nothing is sent to real mailboxes. Open http://localhost:8025 to read them. To use a real SMTP server, set the `MAIL_*` variables above.
+- The entity `Message` needs a no-argument constructor (`protected Message() {}`) so JPA can read rows from the database.
+
+## Screenshots
+
+All screenshots are in the `screenshots/` folder.
+
+| # | File                        | What it shows                                                          |
+|---|-----------------------------|------------------------------------------------------------------------|
+| 1 | `01-docker-compose-ps.png`  | All containers running                                                 |
+| 2 | `02-postman-post.png`       | `POST /api/messages` returns `201`                                     |
+| 3 | `03-rabbitmq-queues.png`    | Queues `email.notifications` and `email.notifications.dlq`, 1 consumer |
+| 4 | `04-email-service-logs.png` | email-service received the event and sent the email                    |
+| 5 | `05-mailpit-inbox.png`      | The email in Mailpit                                                   |
+| 6 | `06-failure-retry-logs.png` | SMTP down: retries in the email-service log                            |
+| 7 | `07-rabbitmq-dlq.png`       | The failed message in the dead-letter queue                            |

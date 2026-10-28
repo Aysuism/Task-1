@@ -1,4 +1,4 @@
 package com.example.client.dto;
 
-public record MessageRequest(String author, String text) {
+public record MessageRequest(String author, String email, String text) {
 }

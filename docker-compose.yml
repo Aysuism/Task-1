@@ -11,7 +11,7 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U storage_user -d storagedb"]
+      test: [ "CMD-SHELL", "pg_isready -U storage_user -d storagedb" ]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -29,8 +29,11 @@ services:
       DB_NAME: storagedb
       DB_USER: storage_user
       DB_PASSWORD: storage_pass
+      RABBITMQ_HOST: rabbitmq
     depends_on:
       postgres:
+        condition: service_healthy
+      rabbitmq:
         condition: service_healthy
 
   client-service:
@@ -45,5 +48,38 @@ services:
     depends_on:
       - storage-service
 
+  email-service:
+    build: ./email-service
+    container_name: email-service
+    ports:
+      - "8083:8083"
+    environment:
+      RABBITMQ_HOST: rabbitmq
+      MAIL_HOST: mailpit
+      MAIL_PORT: 1025
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    container_name: rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: [ "CMD", "rabbitmq-diagnostics", "-q", "ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  mailpit:
+    image: axllent/mailpit
+    container_name: mailpit
+    ports:
+      - "1025:1025"
+      - "8025:8025"
 volumes:
   postgres-data:

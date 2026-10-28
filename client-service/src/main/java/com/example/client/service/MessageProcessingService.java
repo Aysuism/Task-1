@@ -24,12 +24,12 @@ public class MessageProcessingService {
         validate(request);
 
         String author = capitalize(request.author().trim());
+        String email = request.email().trim();
         String text = request.text().trim().replaceAll("\\s+", " ");
         int wordCount = text.split(" ").length;
 
         ProcessedMessage processed =
-                new ProcessedMessage(author, text, wordCount, LocalDateTime.now());
-
+                new ProcessedMessage(author, email, text, wordCount, LocalDateTime.now());
         return storageClient.saveMessage(processed);
     }
 
@@ -38,10 +38,19 @@ public class MessageProcessingService {
     }
 
     private void validate(MessageRequest request) {
-        if (request == null || isBlank(request.author()) || isBlank(request.text())) {
+        if (request == null
+                || isBlank(request.author())
+                || isBlank(request.email())
+                || isBlank(request.text())) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
-                    "Both 'author' and 'text' are required"
+                    "Fields 'author', 'email' and 'text' are required"
+            );
+        }
+        if (!request.email().contains("@")) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "'email' must look like an email address"
             );
         }
     }

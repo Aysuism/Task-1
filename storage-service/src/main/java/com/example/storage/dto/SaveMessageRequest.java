@@ -4,6 +4,7 @@ import java.time.LocalDateTime;
 
 public record SaveMessageRequest(
         String author,
+        String email,
         String text,
         int wordCount,
         LocalDateTime processedAt

@@ -22,6 +22,7 @@ public class MessageService {
     public MessageResponse save(SaveMessageRequest request) {
         Message message = new Message(
                 request.author(),
+                request.email(),
                 request.text(),
                 request.wordCount(),
                 request.processedAt()

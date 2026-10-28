@@ -21,6 +21,9 @@ public class Message {
     @Column(nullable = false, length = 100)
     private String author;
 
+    @Column(nullable = false, length = 200)
+    private String email;
+
     @Column(nullable = false, length = 1000)
     private String text;
 
@@ -36,8 +39,9 @@ public class Message {
     protected Message() {
     }
 
-    public Message(String author, String text, int wordCount, LocalDateTime processedAt) {
+    public Message(String author, String email, String text, int wordCount, LocalDateTime processedAt) {
         this.author = author;
+        this.email = email;
         this.text = text;
         this.wordCount = wordCount;
         this.processedAt = processedAt;
@@ -48,10 +52,31 @@ public class Message {
         this.savedAt = LocalDateTime.now();
     }
 
-    public Long getId() { return id; }
-    public String getAuthor() { return author; }
-    public String getText() { return text; }
-    public int getWordCount() { return wordCount; }
-    public LocalDateTime getProcessedAt() { return processedAt; }
-    public LocalDateTime getSavedAt() { return savedAt; }
+    public Long getId() {
+        return id;
+    }
+
+    public String getAuthor() {
+        return author;
+    }
+
+    public String getEmail() {
+        return email;
+    }
+
+    public String getText() {
+        return text;
+    }
+
+    public int getWordCount() {
+        return wordCount;
+    }
+
+    public LocalDateTime getProcessedAt() {
+        return processedAt;
+    }
+
+    public LocalDateTime getSavedAt() {
+        return savedAt;
+    }
 }
